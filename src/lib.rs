@@ -6,6 +6,7 @@
 #![feature(const_transmute)]
 #![feature(specialization)]
 #![feature(negative_impls)]
+#![feature(raw_ref_op)]
 use std::cell::UnsafeCell;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -26,9 +27,9 @@ pub unsafe trait Mark<'o, 'n, O, N> {
 }
 
 pub unsafe trait Trace {
-    fn trace(t: &Self);
-    const TRACE_FIELD_COUNT: u8;
-    const TRACE_TYPE_INFO: GcTypeInfo;
+    fn trace(_: &Self);
+    fn trace_field_count(_: &Self) -> u8;
+    fn trace_type_info(_: &Self) -> GcTypeInfo;
     fn trace_child_type_info() -> Vec<GcTypeInfo>;
     fn trace_transitive_type_info() -> HashSet<GcTypeInfo>;
 }
@@ -119,6 +120,10 @@ unsafe impl<T> Immutable for Box<T> {}
 
 unsafe impl<T: NoGc + Immutable> Trace for T {
     fn trace(_: &T) {}
+    fn trace_field_count(_: &Self) -> u8 {
+    }
+
+    fn trace_type_info(_: &Self) -> GcTypeInfo;
     const TRACE_FIELD_COUNT: u8 = 0;
     const TRACE_TYPE_INFO: GcTypeInfo = GcTypeInfo::new::<T>();
     fn trace_child_type_info() -> Vec<GcTypeInfo> {
@@ -160,13 +165,15 @@ fn list_test() {
     // These three impls will be derived with a procedural macro
 
     unsafe impl<'r, T> Trace for List<'r, T> {
-        fn trace(_: &List<'r, T>) {}
+        fn trace(_: &Self) {
+        }
         const TRACE_FIELD_COUNT: u8 = 0;
-        const TRACE_TYPE_INFO: GcTypeInfo = GcTypeInfo::new::<Self>();
+        const TRACE_TYPE_INFO: GcTypeInfo = todo!();
         fn trace_child_type_info() -> Vec<GcTypeInfo> {
             Vec::new()
         }
         fn trace_transitive_type_info() -> HashSet<GcTypeInfo> {
+            let _ = &raw const Self::trace;
             HashSet::default()
         }
     }
