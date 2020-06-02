@@ -25,10 +25,12 @@ pub unsafe trait Mark<'o, 'n, O, N> {
     fn mark(&'n self, o: Gc<'o, O>) -> Gc<'n, N>;
 }
 
-pub unsafe trait Trace {
-    fn trace(t: &Self);
+pub unsafe trait Trace<'l> {
+    fn trace(_: &Self);
     const TRACE_FIELD_COUNT: u8;
-    const TRACE_TYPE_INFO: GcTypeInfo;
+    const TRACE_TYPE_INFO: &'l GcTypeInfo;
+    fn trace_field_count(_: &Self) -> u8;
+    fn trace_type_info(_: &Self) -> GcTypeInfo;
     fn trace_child_type_info() -> Vec<GcTypeInfo>;
     fn trace_transitive_type_info() -> HashSet<GcTypeInfo>;
 }
@@ -43,10 +45,10 @@ pub struct GcTypeInfo {
 }
 
 impl GcTypeInfo {
-    pub fn new<T: Trace>() -> Self {
+    pub fn new<'l, T: Trace<'l>>() -> Self {
         Self {
             trace_ptr: T::trace as *const fn(&T) as usize,
-            drop_ptr: drop_in_place as *const fn(*mut T) as usize,
+            drop_ptr: drop_in_place::<T> as *const fn(*mut T) as usize,
             needs_drop: needs_drop::<T>(),
             byte_size: size_of::<T>() as u16,
             alignment: align_of::<T>() as u16,
@@ -119,6 +121,12 @@ unsafe impl<T> Immutable for Box<T> {}
 
 unsafe impl<T: NoGc + Immutable> Trace for T {
     fn trace(_: &T) {}
+    fn trace_field_count(_: &Self) -> u8 {
+        0
+    }
+    fn trace_type_info(t: &Self) -> GcTypeInfo {
+        GcTypeInfo::new(t)
+    }
     const TRACE_FIELD_COUNT: u8 = 0;
     const TRACE_TYPE_INFO: GcTypeInfo = GcTypeInfo::new::<T>();
     fn trace_child_type_info() -> Vec<GcTypeInfo> {
@@ -139,8 +147,12 @@ unsafe impl<'r, T: Trace> Trace for Gc<'r, T> {
     fn trace(t: &Self) {
         Trace::trace(t.deref())
     }
-    const TRACE_FIELD_COUNT: u8 = 0;
-    const TRACE_TYPE_INFO: GcTypeInfo = GcTypeInfo::new::<T>();
+    fn trace_field_count(_: &Self) -> u8 {
+        0
+    }
+    fn trace_type_info(t: &Self) -> GcTypeInfo {
+        GcTypeInfo::new(t)
+    }
     fn trace_child_type_info() -> Vec<GcTypeInfo> {
         T::trace_child_type_info()
     }
@@ -159,10 +171,22 @@ fn list_test() {
 
     // These three impls will be derived with a procedural macro
 
-    unsafe impl<'r, T> Trace for List<'r, T> {
-        fn trace(_: &List<'r, T>) {}
+    unsafe impl<'r, T> Trace<'r> for List<'r, T> {
+        fn trace(_: &Self) {}
+        fn trace_field_count(_: &Self) -> u8 {
+            0
+        }
         const TRACE_FIELD_COUNT: u8 = 0;
-        const TRACE_TYPE_INFO: GcTypeInfo = GcTypeInfo::new::<Self>();
+        const TRACE_TYPE_INFO: &'r GcTypeInfo = &GcTypeInfo{
+            trace_ptr: *&Self::trace as *const fn(&T) as usize,
+            drop_ptr: drop_in_place::<T> as *const fn(*mut T) as usize,
+            needs_drop: needs_drop::<T>(),
+            byte_size: size_of::<T>() as u16,
+            alignment: align_of::<T>() as u16,
+        };
+        fn trace_type_info(t: &Self) -> GcTypeInfo {
+            GcTypeInfo::new(t)
+        }
         fn trace_child_type_info() -> Vec<GcTypeInfo> {
             Vec::new()
         }
@@ -210,8 +234,12 @@ struct Foo<'l> {
 
 unsafe impl<'r> Trace for Foo<'r> {
     fn trace(_: &Foo<'r>) {}
-    const TRACE_FIELD_COUNT: u8 = 0;
-    const TRACE_TYPE_INFO: GcTypeInfo = GcTypeInfo::new::<T>();
+    fn trace_field_count(_: &Self) -> u8 {
+        0
+    }
+    fn trace_type_info(t: &Self) -> GcTypeInfo {
+        GcTypeInfo::new(t)
+    }
     fn trace_child_type_info() -> Vec<GcTypeInfo> {
         Vec::new()
     }
@@ -284,8 +312,12 @@ fn hidden_lifetime_test() {
 
     unsafe impl<'a, 'b> Trace for Foo2<'a, 'b> {
         fn trace(_: &Foo2<'a, 'b>) {}
-        const TRACE_FIELD_COUNT: u8 = 0;
-        const TRACE_TYPE_INFO: GcTypeInfo = GcTypeInfo::new::<T>();
+        fn trace_field_count(_: &Self) -> u8 {
+            1
+        }
+        fn trace_type_info(t: &Self) -> GcTypeInfo {
+            GcTypeInfo::new(t)
+        }
         fn trace_child_type_info() -> Vec<GcTypeInfo> {
             Vec::new()
         }
